@@ -1,0 +1,39 @@
+{
+  "name": "ai-girlfriend-game",
+  "version": "1.0.0",
+  "type": "module",
+  "description": "CLI-based AI girlfriend confession game with deep character interactions",
+  "main": "dist/index.js",
+  "scripts": {
+    "build": "tsc",
+    "start": "node dist/index.js",
+    "dev": "ts-node --esm src/index.ts",
+    "test": "ts-node --esm src/test/test-runner.ts",
+    "test:manual": "ts-node --esm src/test/manual-test.ts",
+    "test:simulation": "ts-node --esm src/test/simulation-test.ts",
+    "test:gemini": "ts-node --esm src/test/gemini-test.ts",
+    "test:live": "ts-node --esm src/test/gemini-live-test.ts",
+    "test:all": "npm test && npm run test:manual && npm run test:simulation && npm run test:gemini",
+    "typecheck": "tsc --noEmit"
+  },
+  "keywords": [
+    "ai",
+    "game",
+    "cli",
+    "typescript",
+    "openai"
+  ],
+  "author": "",
+  "license": "MIT",
+  "dependencies": {
+    "dotenv": "^17.2.1",
+    "openai": "^4.24.0",
+    "readline-sync": "^1.4.10"
+  },
+  "devDependencies": {
+    "@types/node": "^20.10.0",
+    "@types/readline-sync": "^1.4.8",
+    "ts-node": "^10.9.1",
+    "typescript": "^5.3.0"
+  }
+}
