@@ -130,6 +130,17 @@ export class LineBotServer {
       });
     });
 
+    // Webhook状態確認用エンドポイント（署名検証なし）
+    this.app.get('/webhook', (req, res) => {
+      res.json({
+        status: 'webhook_ready',
+        message: 'Webhook エンドポイントは正常に動作しています',
+        timestamp: new Date().toISOString(),
+        method: 'GET requests are for testing only. LINE webhook uses POST.',
+        endpoint: '/webhook'
+      });
+    });
+
     // LINE Webhook エンドポイント
     this.app.post('/webhook', middleware(lineConfig), async (req, res) => {
       try {

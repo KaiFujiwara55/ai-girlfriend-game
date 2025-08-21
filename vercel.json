@@ -1,14 +1,12 @@
 {
   "version": 2,
-  "functions": {
-    "dist/line-bot-server.js": {
-      "maxDuration": 30
-    }
-  },
   "builds": [
     {
       "src": "dist/line-bot-server.js",
-      "use": "@vercel/node"
+      "use": "@vercel/node",
+      "config": {
+        "maxLambdaSize": "50mb"
+      }
     }
   ],
   "routes": [
