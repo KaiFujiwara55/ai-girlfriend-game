@@ -106,7 +106,7 @@ setInterval(() => {
 }, 30 * 60 * 1000); // 30分ごと
 
 export class LineBotServer {
-  private app: express.Application;
+  public app: express.Application;
   private port: number;
 
   constructor() {
@@ -396,8 +396,11 @@ ${emotions}
   }
 }
 
+// Vercel serverless function用のエクスポート
+const server = new LineBotServer();
+export default server.app;
+
 // サーバー起動（直接実行の場合）
 if (import.meta.url === `file://${process.argv[1]}`) {
-  const server = new LineBotServer();
   server.start();
 }

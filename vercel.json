@@ -11,8 +11,5 @@
       "src": "/(.*)",
       "dest": "dist/line-bot-server.js"
     }
-  ],
-  "env": {
-    "NODE_ENV": "production"
-  }
+  ]
 }
