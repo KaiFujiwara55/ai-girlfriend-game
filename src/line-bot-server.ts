@@ -67,14 +67,28 @@ class UserSessionManager {
   }
 
   private async initializeAIProvider(): Promise<string> {
-    const configs = getProviderConfigFromEnv();
-    const availableProvider = await AIProviderFactory.detectAvailableProvider(configs);
-    
-    if (!availableProvider) {
-      throw new Error('利用可能なAIプロバイダーが見つかりません。');
-    }
+    try {
+      const configs = getProviderConfigFromEnv();
+      console.log('Environment configs:', Object.keys(configs));
+      
+      const availableProvider = await AIProviderFactory.detectAvailableProvider(configs);
+      console.log('Available provider:', availableProvider);
+      
+      if (!availableProvider) {
+        console.error('No AI provider available. Config keys:', Object.keys(configs));
+        // フォールバックとしてgeminiを強制使用
+        if (process.env.GEMINI_API_KEY) {
+          console.log('Using Gemini as fallback provider');
+          return 'gemini';
+        }
+        throw new Error('利用可能なAIプロバイダーが見つかりません。');
+      }
 
-    return availableProvider;
+      return availableProvider;
+    } catch (error) {
+      console.error('AI provider initialization error:', error);
+      throw error;
+    }
   }
 
   getDifficulties() {
@@ -144,15 +158,22 @@ export class LineBotServer {
     // LINE Webhook エンドポイント
     this.app.post('/webhook', middleware(lineConfig), async (req, res) => {
       try {
+        console.log('Webhook received:', JSON.stringify(req.body, null, 2));
         const events: WebhookEvent[] = req.body.events;
         
         await Promise.all(events.map(async (event) => {
-          await this.handleEvent(event);
+          try {
+            await this.handleEvent(event);
+          } catch (eventError) {
+            console.error('Event handling error:', eventError);
+            // 個別のイベントエラーでは全体を止めない
+          }
         }));
 
         res.status(200).send('OK');
       } catch (error) {
         console.error('Webhook処理エラー:', error);
+        console.error('Error stack:', error.stack);
         res.status(500).send('Internal Server Error');
       }
     });
