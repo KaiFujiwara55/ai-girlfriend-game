@@ -117,7 +117,6 @@ export class LineBotServer {
   }
 
   private setupMiddleware() {
-    this.app.use('/webhook', middleware(lineConfig));
     this.app.use(express.json());
   }
 
@@ -132,7 +131,7 @@ export class LineBotServer {
     });
 
     // LINE Webhook エンドポイント
-    this.app.post('/webhook', async (req, res) => {
+    this.app.post('/webhook', middleware(lineConfig), async (req, res) => {
       try {
         const events: WebhookEvent[] = req.body.events;
         
@@ -401,6 +400,6 @@ const server = new LineBotServer();
 export default server.app;
 
 // サーバー起動（直接実行の場合）
-if (import.meta.url === `file://${process.argv[1]}`) {
+if (require.main === module) {
   server.start();
 }
