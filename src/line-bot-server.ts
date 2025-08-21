@@ -20,6 +20,12 @@ const lineConfig: ClientConfig & MiddlewareConfig = {
   channelSecret: process.env.LINE_CHANNEL_SECRET || ''
 };
 
+// デバッグ用: 環境変数の確認
+console.log('LINE Config check:');
+console.log('Access Token exists:', !!process.env.LINE_CHANNEL_ACCESS_TOKEN);
+console.log('Channel Secret exists:', !!process.env.LINE_CHANNEL_SECRET);
+console.log('Channel Secret length:', (process.env.LINE_CHANNEL_SECRET || '').length);
+
 // LINE クライアント
 const client = new Client(lineConfig);
 
@@ -158,7 +164,8 @@ export class LineBotServer {
     // LINE Webhook エンドポイント
     this.app.post('/webhook', middleware(lineConfig), async (req, res) => {
       try {
-        console.log('Webhook received:', JSON.stringify(req.body, null, 2));
+        console.log('Webhook received with signature validation enabled');
+        console.log('Event count:', req.body.events?.length || 0);
         const events: WebhookEvent[] = req.body.events;
         
         await Promise.all(events.map(async (event) => {
