@@ -57,6 +57,9 @@ export interface GameState {
     turnCount: number;
     startTime: Date;
     specialEvents: string[];
+    confessionAttempted?: boolean;
+    confessionSuccessful?: boolean;
+    failedConfessions?: number;
   };
 }
 

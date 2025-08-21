@@ -1,0 +1,18 @@
+{
+  "version": 2,
+  "builds": [
+    {
+      "src": "dist/line-bot-server.js",
+      "use": "@vercel/node"
+    }
+  ],
+  "routes": [
+    {
+      "src": "/(.*)",
+      "dest": "dist/line-bot-server.js"
+    }
+  ],
+  "env": {
+    "NODE_ENV": "production"
+  }
+}

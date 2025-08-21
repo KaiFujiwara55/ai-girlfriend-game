@@ -234,7 +234,7 @@ export class DialogueSystem {
     }
   }
 
-  private static getSuccessConfessionResponse(character: CharacterPersonality, emotionState: EmotionState): string {
+  static getSuccessConfessionResponse(character: CharacterPersonality, emotionState: EmotionState): string {
     switch (character.name) {
       case 'さくら':
         return [
@@ -262,7 +262,7 @@ export class DialogueSystem {
     }
   }
 
-  private static getFailureConfessionResponse(character: CharacterPersonality, emotionState: EmotionState): string {
+  static getFailureConfessionResponse(character: CharacterPersonality, emotionState: EmotionState, affectionGap?: number): string {
     switch (character.name) {
       case 'さくら':
         return [

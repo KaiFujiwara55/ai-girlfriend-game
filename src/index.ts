@@ -1,5 +1,4 @@
 import 'dotenv/config';
-import readlineSync from 'readline-sync';
 import { GameEngine } from './game-engine.js';
 import { AIProviderFactory, getProviderConfigFromEnv } from './providers/ai-provider-factory.js';
 import { Difficulty, GameConfig } from './types/game.js';
@@ -7,6 +6,7 @@ import { Difficulty, GameConfig } from './types/game.js';
 class AIGirlfriendGame {
   private gameEngine?: GameEngine;
   private selectedProvider?: string;
+  private readline?: any;
 
   async start() {
     console.log('=== 🌸 AI彼女告白ゲーム（改良版）🌸 ===');
@@ -31,7 +31,7 @@ class AIGirlfriendGame {
       );
 
       // 難易度選択
-      const difficulty = this.selectDifficulty();
+      const difficulty = await this.selectDifficulty();
       
       // ゲーム開始
       this.gameEngine.initializeGame(difficulty);
@@ -69,26 +69,43 @@ class AIGirlfriendGame {
     return availableProvider;
   }
 
-  private selectDifficulty(): Difficulty {
-    console.log('💝 お相手を選んでください:');
-    console.log('1. さくら (初級) - 素直で優しい女の子');
-    console.log('2. あや (中級) - ツンデレな女の子');
-    console.log('3. みさき (上級) - クールで知的な女の子');
+  private async selectDifficulty(): Promise<Difficulty> {
+    const { createInterface } = await import('readline');
+    const rl = createInterface({
+      input: process.stdin,
+      output: process.stdout
+    });
 
-    while (true) {
-      const choice = readlineSync.question('\n選択 (1-3): ');
-      
-      switch (choice) {
-        case '1':
-          return 'easy';
-        case '2':
-          return 'medium';
-        case '3':
-          return 'hard';
-        default:
-          console.log('❌ 1-3の数字を入力してください。');
-      }
-    }
+    return new Promise((resolve) => {
+      console.log('💝 お相手を選んでください:');
+      console.log('1. さくら (初級) - 素直で優しい女の子');
+      console.log('2. あや (中級) - ツンデレな女の子');
+      console.log('3. みさき (上級) - クールで知的な女の子');
+
+      const askChoice = () => {
+        rl.question('\n選択 (1-3): ', (answer) => {
+          switch (answer.trim()) {
+            case '1':
+              rl.close();
+              resolve('easy');
+              break;
+            case '2':
+              rl.close();
+              resolve('medium');
+              break;
+            case '3':
+              rl.close();
+              resolve('hard');
+              break;
+            default:
+              console.log('❌ 1-3の数字を入力してください。');
+              askChoice();
+          }
+        });
+      };
+
+      askChoice();
+    });
   }
 
   private getCharacterIntroduction(difficulty: Difficulty): string {
@@ -107,16 +124,30 @@ class AIGirlfriendGame {
   private async gameLoop() {
     if (!this.gameEngine) return;
 
+    const { createInterface } = await import('readline');
+    const rl = createInterface({
+      input: process.stdin,
+      output: process.stdout
+    });
+
     console.log('💬 会話を始めましょう！');
     console.log('💡 ヒント: "help"で操作説明、"status"で現在の状態を確認できます');
     console.log('💘 準備ができたら "告白" と入力してみてください\n');
 
     let isGameActive = true;
 
+    const askInput = (): Promise<string> => {
+      return new Promise((resolve) => {
+        rl.question('> あなた: ', (answer) => {
+          resolve(answer.trim());
+        });
+      });
+    };
+
     while (isGameActive) {
       try {
         // ユーザー入力
-        const userInput = readlineSync.question('> あなた: ');
+        const userInput = await askInput();
 
         // 特殊コマンドの処理
         if (userInput.toLowerCase() === 'help') {
@@ -155,6 +186,8 @@ class AIGirlfriendGame {
         console.log('もう一度お試しください。');
       }
     }
+
+    rl.close();
   }
 
   private showHelp() {

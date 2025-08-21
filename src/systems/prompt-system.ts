@@ -38,6 +38,9 @@ export class PromptSystem {
     
     // 感情表現ルール
     const emotionRulesSection = this.buildEmotionRulesSection();
+    
+    // 応答の長さ制御
+    const responseLengthGuidance = this.buildResponseLengthGuidance(userInput);
 
     return `${characterSection}
 
@@ -48,6 +51,8 @@ ${historySection}
 ${guidanceSection}
 
 ${emotionRulesSection}
+
+${responseLengthGuidance}
 
 # 重要な指示
 - あなたは${character.name}として一貫して振る舞ってください
@@ -168,9 +173,42 @@ ${this.getCharacterSpecificGuidance(character)}`;
 - [AFFECTION:±数値] - 好感度の変化 (-5〜+10)
 - [INTEREST:±数値] - 興味度の変化 (-5〜+10)
 
+## 特殊イベントタグ
+- [CONFESSION_DETECTED] - ユーザーから明確な告白を受けた場合のみ使用
+
+## 告白の判定基準
+以下のような明確な恋愛感情の表現があった場合にのみ[CONFESSION_DETECTED]タグを使用:
+- 「君が好き」「あなたが好き」などの直接的な好意の表明
+- 「付き合って」「恋人になって」などの交際の申し込み
+- 「愛してる」などの愛の告白
+
+以下は告白として扱わない:
+- 「料理が好き」「音楽が好き」など対象物への好意
+- 「好きかも」「気になる」などの曖昧な表現
+- 友人としての好意の表現
+
 ## タグの使用例
 "そうなんだ…すごいね [MOOD:+3] [INTEREST:+2]"
-"え、そんなことないよ！[TENSION:+2] [AFFECTION:+1]"`;
+"え、そんなことないよ！[TENSION:+2] [AFFECTION:+1]"
+"え…！今、なんて…？[CONFESSION_DETECTED] [TENSION:+5] [AFFECTION:+3]"`;
+  }
+
+  private static buildResponseLengthGuidance(userInput: string): string {
+    const inputLength = userInput.length;
+    let guidance = '# 応答の長さ\n';
+    
+    if (inputLength <= 10) {
+      guidance += '- ユーザーの入力が短いため、1-2文で簡潔に応答してください\n';
+      guidance += '- 自然な相槌や短い反応を心がけてください';
+    } else if (inputLength <= 30) {
+      guidance += '- 2-3文程度の標準的な長さで応答してください\n';
+      guidance += '- 会話のキャッチボールを意識してください';
+    } else {
+      guidance += '- ユーザーが詳しく話しているため、3-4文で丁寧に応答してください\n';
+      guidance += '- 相手の話題に深く共感し、会話を発展させてください';
+    }
+    
+    return guidance;
   }
 
   /**

@@ -231,4 +231,28 @@ export class EmotionSystem {
     
     return response;
   }
+
+  /**
+   * 繰り返しパターンに基づく感情ペナルティを計算
+   */
+  static applyRepetitionPenalty(
+    baseEmotion: Partial<EmotionState>,
+    repetitionScore: number,
+    isRepetitive: boolean
+  ): Partial<EmotionState> {
+    if (!isRepetitive) {
+      return baseEmotion;
+    }
+
+    // 繰り返しに対するペナルティを適用
+    const penaltyFactor = Math.max(0.2, 1 - repetitionScore);
+    
+    return {
+      mood: baseEmotion.mood ? baseEmotion.mood * penaltyFactor - 2 : -2,
+      trust: baseEmotion.trust ? baseEmotion.trust * penaltyFactor : 0,
+      tension: (baseEmotion.tension || 0) + 2, // 緊張度は上がる
+      affection: baseEmotion.affection ? baseEmotion.affection * penaltyFactor : 0,
+      interest: baseEmotion.interest ? baseEmotion.interest * penaltyFactor - 3 : -3
+    };
+  }
 }

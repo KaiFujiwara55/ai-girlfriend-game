@@ -10,16 +10,19 @@ class MockAIProvider implements AIProvider {
   name = 'mock';
 
   async chat(messages: AIMessage[]): Promise<AIResponse> {
+    const systemMessage = messages.find(m => m.role === 'system')?.content || '';
     const userMessage = messages.find(m => m.role === 'user')?.content || '';
     
-    // 簡単なルールベースの応答
+    // 簡単なルールベースの応答（プロンプト全体をチェック）
     let response = '';
-    if (userMessage.includes('hello') || userMessage.includes('こんにちは')) {
+    if (systemMessage.includes('告白') || userMessage.includes('告白')) {
+      response = 'え...そんな... [CONFESSION_DETECTED] [MOOD:+5] [AFFECTION:+3] [TENSION:+8]';
+    } else if (systemMessage.includes('hello') || systemMessage.includes('こんにちは')) {
       response = 'こんにちは！よろしくお願いします [MOOD:+2] [AFFECTION:+1]';
-    } else if (userMessage.includes('料理') || userMessage.includes('cooking')) {
+    } else if (systemMessage.includes('料理') || systemMessage.includes('cooking')) {
       response = 'お料理、好きなんですか？ [MOOD:+3] [AFFECTION:+2] [INTEREST:+4]';
-    } else if (userMessage.includes('告白') || userMessage.includes('好き')) {
-      response = 'え...そんな... [MOOD:+5] [AFFECTION:+3] [TENSION:+8]';
+    } else if (systemMessage.includes('好き') || userMessage.includes('好き')) {
+      response = 'え...そんな... [CONFESSION_DETECTED] [MOOD:+5] [AFFECTION:+3] [TENSION:+8]';
     } else {
       response = 'そうですね... [MOOD:+1] [AFFECTION:+1]';
     }
@@ -188,13 +191,19 @@ class TestRunner {
         aiProvider: 'mock',
         maxConversationHistory: 10,
         autoSave: false,
-        debugMode: false
+        debugMode: true
       };
       
       const engine = new GameEngine(mockProvider, gameConfig);
       engine.initializeGame('easy');
       
+      // 好感度を上げて告白成功するようにする
+      const gameState = engine.getGameState();
+      gameState.emotionState.affection = 70; // さくらの成功条件は60以上
+      
       const result = await engine.processUserInput('告白します');
+      
+      console.log('Debug - Confession result:', result);
       
       return result.isGameEnding === true && 
              (result.endingType === 'success' || result.endingType === 'failure');

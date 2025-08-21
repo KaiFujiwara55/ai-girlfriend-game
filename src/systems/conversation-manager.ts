@@ -273,4 +273,59 @@ export class ConversationManager {
 
     return stats;
   }
+
+  /**
+   * 繰り返しパターンを検出
+   */
+  detectRepetitivePatterns(
+    history: ConversationEntry[],
+    windowSize: number = 5
+  ): {
+    isRepetitive: boolean;
+    repetitionScore: number;
+    patterns: string[];
+  } {
+    if (history.length < windowSize) {
+      return { isRepetitive: false, repetitionScore: 0, patterns: [] };
+    }
+
+    const recentEntries = history.slice(-windowSize);
+    const patterns: Map<string, number> = new Map();
+    
+    // パターンを抽出（単語レベル）
+    for (const entry of recentEntries) {
+      const words = entry.userInput.toLowerCase()
+        .replace(/[。、！？\s]+/g, ' ')
+        .split(' ')
+        .filter((word: string) => word.length > 1);
+      
+      for (const word of words) {
+        patterns.set(word, (patterns.get(word) || 0) + 1);
+      }
+    }
+
+    // 褒め言葉のパターンをチェック
+    const praiseWords = ['可愛い', 'かわいい', '綺麗', 'きれい', '美しい', '素敵', 'すてき', '好き', 'すき'];
+    let praiseCount = 0;
+    
+    for (const [word, count] of patterns) {
+      if (praiseWords.some(praise => word.includes(praise))) {
+        praiseCount += count;
+      }
+    }
+
+    // 繰り返しスコアを計算
+    const repetitionScore = praiseCount / windowSize;
+    const isRepetitive = repetitionScore > 0.6; // 60%以上が褒め言葉なら繰り返しと判定
+
+    const detectedPatterns = Array.from(patterns.entries())
+      .filter(([_, count]) => count >= 3)
+      .map(([word, _]) => word);
+
+    return {
+      isRepetitive,
+      repetitionScore,
+      patterns: detectedPatterns
+    };
+  }
 }

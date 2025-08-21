@@ -9,37 +9,38 @@ import { DialogueSystem } from './systems/dialogue-system.js';
 export class GameEngine {
   private gameState!: GameState;
   private aiProvider: AIProvider;
-  private conversationManager: ConversationManager;
   private config: GameConfig;
+  private conversationManager: ConversationManager;
+  private dialogueSystem: DialogueSystem;
 
   constructor(aiProvider: AIProvider, config: GameConfig) {
     this.aiProvider = aiProvider;
     this.config = config;
-    this.conversationManager = new ConversationManager(config.maxConversationHistory);
+    this.conversationManager = new ConversationManager(config.maxConversationHistory || 20);
+    this.dialogueSystem = new DialogueSystem();
   }
 
   /**
    * ゲームを初期化
    */
-  initializeGame(difficulty: Difficulty): void {
+  initializeGame(difficulty: Difficulty) {
     const character = getCharacterByDifficulty(difficulty);
-    
+    const initialEmotion = EmotionSystem.createInitialEmotionState();
+
     this.gameState = {
       character,
       relationshipStage: 'stranger',
-      emotionState: EmotionSystem.createInitialEmotionState(),
+      emotionState: initialEmotion,
       conversationHistory: [],
       gameProgress: {
         turnCount: 0,
         startTime: new Date(),
-        specialEvents: []
+        specialEvents: [],
+        confessionAttempted: false,
+        confessionSuccessful: false,
+        failedConfessions: 0
       }
     };
-
-    if (this.config.debugMode) {
-      console.log('Game initialized with character:', character.name);
-      console.log('Initial emotion state:', this.gameState.emotionState);
-    }
   }
 
   /**
@@ -58,13 +59,22 @@ export class GameEngine {
 
     this.gameState.gameProgress.turnCount++;
 
-    // 告白チェック
-    if (this.isConfessionAttempt(userInput)) {
-      return await this.handleConfession();
-    }
+    // 繰り返しパターンを検出
+    const repetitionInfo = this.conversationManager.detectRepetitivePatterns(
+      this.gameState.conversationHistory
+    );
 
     // 話題ベースの感情変化を事前計算
-    const topicBasedEmotion = EmotionSystem.calculateTopicResponse(userInput, this.gameState.character);
+    let topicBasedEmotion = EmotionSystem.calculateTopicResponse(userInput, this.gameState.character);
+    
+    // 繰り返しペナルティを適用
+    if (repetitionInfo.isRepetitive) {
+      topicBasedEmotion = EmotionSystem.applyRepetitionPenalty(
+        topicBasedEmotion,
+        repetitionInfo.repetitionScore,
+        repetitionInfo.isRepetitive
+      );
+    }
 
     // AIプロンプトを生成
     const promptContext = {
@@ -84,6 +94,12 @@ export class GameEngine {
 
     // AI応答を取得
     const aiResponse = await this.getAIResponse(prompt);
+
+    // AI応答から告白検出タグをチェック
+    if (this.detectConfessionInResponse(aiResponse)) {
+      // 告白が検出された場合の処理
+      return await this.handleConfessionFromResponse(aiResponse, topicBasedEmotion);
+    }
 
     // AI応答から感情変化を抽出
     const aiEmotionChange = EmotionSystem.extractEmotionChange(aiResponse);
@@ -126,82 +142,20 @@ export class GameEngine {
   }
 
   /**
-   * 告白処理
-   */
-  private async handleConfession(): Promise<any> {
-    const isSuccess = EmotionSystem.isConfessionSuccessful(
-      this.gameState.emotionState,
-      this.gameState.character
-    );
-
-    const confessionResponse = DialogueSystem.generateConfessionResponse(
-      this.gameState.character,
-      this.gameState.emotionState,
-      isSuccess
-    );
-
-    // 告白結果による感情変化
-    const emotionChange = isSuccess 
-      ? { affection: 20, trust: 10, mood: 15, tension: -5 }
-      : { affection: -5, trust: 2, mood: -8, tension: 8 };
-
-    // 感情状態を更新
-    this.gameState.emotionState = EmotionSystem.applyEmotionChange(
-      this.gameState.emotionState,
-      emotionChange,
-      this.gameState.character
-    );
-
-    // 告白イベントを記録
-    this.gameState.gameProgress.specialEvents.push(
-      isSuccess ? 'confession_success' : 'confession_failure'
-    );
-
-    return {
-      aiResponse: this.cleanResponse(confessionResponse),
-      emotionChange,
-      relationshipStage: isSuccess ? 'lover' : this.gameState.relationshipStage,
-      isGameEnding: true,
-      endingType: isSuccess ? 'success' : 'failure'
-    };
-  }
-
-  /**
    * AI応答を取得
    */
   private async getAIResponse(prompt: string): Promise<string> {
-    try {
-      const messages = [
-        { role: 'system' as const, content: prompt },
-        { role: 'user' as const, content: 'Please respond as the character.' }
-      ];
-
-      const response = await this.aiProvider.chat(messages, {
-        temperature: 0.8,
-        maxTokens: 300
-      });
-
-      return response.content;
-    } catch (error) {
-      console.error('Failed to get AI response:', error);
-      return this.getFallbackResponse();
-    }
-  }
-
-  /**
-   * フォールバック応答（AI障害時）
-   */
-  private getFallbackResponse(): string {
-    const fallbacks = [
-      'そうですね... [MOOD:+1] [AFFECTION:+1]',
-      'なるほど、そういうことですか [MOOD:+0] [INTEREST:+2]',
-      'うーん、そうですね [MOOD:+1] [TRUST:+1]'
+    const messages = [
+      { role: 'system' as const, content: prompt },
+      { role: 'user' as const, content: '' }
     ];
-    return fallbacks[Math.floor(Math.random() * fallbacks.length)];
+
+    const response = await this.aiProvider.chat(messages);
+    return response.content;
   }
 
   /**
-   * 告白の判定
+   * 告白判定
    */
   private isConfessionAttempt(input: string): boolean {
     const confessionKeywords = [
@@ -214,125 +168,263 @@ export class GameEngine {
   }
 
   /**
+   * 告白処理
+   */
+  private async handleConfession(): Promise<any> {
+    if (!this.gameState) {
+      throw new Error('Game state not initialized');
+    }
+
+    const currentAffection = this.gameState.emotionState.affection;
+    const requiredAffection = this.getRequiredAffection();
+
+    if (currentAffection >= requiredAffection) {
+      // 成功時
+      const successResponse = DialogueSystem.getSuccessConfessionResponse(
+        this.gameState.character,
+        this.gameState.emotionState
+      );
+
+      this.gameState.gameProgress.confessionAttempted = true;
+      this.gameState.gameProgress.confessionSuccessful = true;
+
+      return {
+        aiResponse: successResponse,
+        emotionChange: { affection: 10, trust: 5, mood: 10 },
+        relationshipStage: 'lover',
+        isGameEnding: true,
+        endingType: 'success'
+      };
+    } else {
+      // 失敗時
+      const failureResponse = DialogueSystem.getFailureConfessionResponse(
+        this.gameState.character,
+        this.gameState.emotionState,
+        requiredAffection - currentAffection
+      );
+
+      this.gameState.gameProgress.failedConfessions = 
+        (this.gameState.gameProgress.failedConfessions || 0) + 1;
+
+      if (this.gameState.gameProgress.failedConfessions >= 3) {
+        return {
+          aiResponse: failureResponse,
+          emotionChange: { affection: -5, mood: -5, tension: 5 },
+          relationshipStage: this.gameState.relationshipStage,
+          isGameEnding: true,
+          endingType: 'failure'
+        };
+      }
+
+      return {
+        aiResponse: failureResponse,
+        emotionChange: { affection: -2, mood: -3, tension: 3 },
+        relationshipStage: this.gameState.relationshipStage
+      };
+    }
+  }
+
+  /**
+   * 難易度に応じた必要好感度を取得
+   */
+  private getRequiredAffection(): number {
+    switch (this.gameState.character.name) {
+      case 'さくら':
+        return 60;
+      case 'あや':
+        return 75;
+      case 'みさき':
+        return 90;
+      default:
+        return 70;
+    }
+  }
+
+  /**
    * 感情変化をマージ
    */
-  private mergeEmotionChanges(emotion1: any, emotion2: any): any {
-    const merged: any = { ...emotion1 };
-    
-    for (const [key, value] of Object.entries(emotion2)) {
-      if (merged[key] !== undefined) {
-        merged[key] += value as number;
-      } else {
-        merged[key] = value;
-      }
+  private mergeEmotionChanges(
+    topicBased: Partial<import('./types/game.js').EmotionState>,
+    aiBased: Partial<import('./types/game.js').EmotionState>
+  ): Partial<import('./types/game.js').EmotionState> {
+    const merged: Partial<import('./types/game.js').EmotionState> = {};
+
+    const allKeys = new Set([
+      ...Object.keys(topicBased),
+      ...Object.keys(aiBased)
+    ]);
+
+    for (const key of allKeys) {
+      const topicValue = (topicBased as any)[key] || 0;
+      const aiValue = (aiBased as any)[key] || 0;
+      (merged as any)[key] = topicValue + aiValue;
     }
-    
+
     return merged;
   }
 
   /**
-   * AI応答をクリーンアップ（感情タグとプロンプト内容を除去）
+   * 特別イベントのチェック
+   */
+  private checkSpecialEvents() {
+    const { emotionState, gameProgress } = this.gameState;
+
+    // 高好感度イベント
+    if (emotionState.affection >= 80 && !gameProgress.specialEvents.includes('high_affection')) {
+      gameProgress.specialEvents.push('high_affection');
+    }
+
+    // 高信頼度イベント
+    if (emotionState.trust >= 85 && !gameProgress.specialEvents.includes('high_trust')) {
+      gameProgress.specialEvents.push('high_trust');
+    }
+  }
+
+  /**
+   * AI応答から不要な要素を削除
    */
   private cleanResponse(response: string): string {
+    // 感情タグとプロンプトの痕跡を削除
     let cleaned = response;
-    
-    // 感情タグを除去
-    cleaned = cleaned.replace(/\[(MOOD|TRUST|TENSION|AFFECTION|INTEREST):[+-]?\d+\]/gi, '');
-    
-    // プロンプト関連の内容を除去
+
+    // 感情タグを削除
+    cleaned = cleaned.replace(/\[(MOOD|TRUST|TENSION|AFFECTION|INTEREST|CONFESSION_DETECTED):[+-]?\d+\]/gi, '');
+
+    // よくあるプロンプトの痕跡を削除
     const promptPatterns = [
-      // システムプロンプトの引用
       /システム[:：].*$/gm,
-      /System[:：].*$/gm,
       /# キャラクター設定.*$/gm,
-      /## 基本情報.*$/gm,
-      /あなたは.*として.*$/gm,
-      /キャラ名[:：].*$/gm,
-      /性格[:：].*$/gm,
-      /ルール[:：].*$/gm,
-      
-      // プロンプトの指示文
+      /# 現在の.*$/gm,
+      /# 会話履歴.*$/gm,
+      /# 行動指針.*$/gm,
+      /# 感情表現ルール.*$/gm,
+      /# 重要な指示.*$/gm,
       /.*として.*応答してください.*$/gm,
-      /.*らしい反応を示してください.*$/gm,
-      /返答には必ず.*を含めてください.*$/gm,
-      /感情変化タグを.*含めてください.*$/gm,
-      
-      // デバッグ情報
-      /=== AI PROMPT DEBUG ===[\s\S]*?========================/g,
-      
-      // 長い説明文やプロンプトの繰り返し
-      /.*キャラクターとして一貫して振る舞ってください.*$/gm,
-      /.*自然で魅力的な会話を心がけてください.*$/gm,
-      
-      // マークダウンヘッダー
-      /^#{1,6}\s.*$/gm,
-      
-      // 冗長な改行
-      /\n{3,}/g
+      /^\*.*\*$/gm,
+      /^##.*$/gm
     ];
-    
-    // 各パターンを適用
+
     for (const pattern of promptPatterns) {
       cleaned = cleaned.replace(pattern, '');
     }
-    
-    // 先頭・末尾の空白や改行を整理
+
+    // 連続する改行を1つに
+    cleaned = cleaned.replace(/\n{3,}/g, '\n\n');
+
+    // 前後の空白を削除
     cleaned = cleaned.trim();
-    
-    // 複数の空白を単一に
-    cleaned = cleaned.replace(/\s+/g, ' ');
-    
-    // 空の応答の場合はフォールバック
-    if (!cleaned || cleaned.length < 3) {
-      const characterName = this.gameState?.character.name || '';
-      const fallbacks = [
-        'そうですね...',
-        'うーん...',
-        'なるほど...',
-        'そうなんですね',
-        '分かりました'
-      ];
-      cleaned = fallbacks[Math.floor(Math.random() * fallbacks.length)];
-    }
-    
+
     return cleaned;
   }
 
-  /**
-   * 特別イベントをチェック
-   */
-  private checkSpecialEvents(): void {
-    const { affection, trust } = this.gameState.emotionState;
-    const turnCount = this.gameState.gameProgress.turnCount;
+  private detectConfessionInResponse(response: string): boolean {
+    return response.includes('[CONFESSION_DETECTED]');
+  }
 
-    // 初回の高好感度反応
-    if (affection >= 30 && !this.gameState.gameProgress.specialEvents.includes('first_positive_reaction')) {
-      this.gameState.gameProgress.specialEvents.push('first_positive_reaction');
+  private async handleConfessionFromResponse(
+    aiResponse: string,
+    topicBasedEmotion: Partial<import('./types/game.js').EmotionState>
+  ): Promise<any> {
+    if (!this.gameState) {
+      throw new Error('Game state not initialized');
     }
 
-    // 信頼関係の確立
-    if (trust >= 50 && !this.gameState.gameProgress.specialEvents.includes('trust_established')) {
-      this.gameState.gameProgress.specialEvents.push('trust_established');
-    }
+    // AI応答から感情変化を抽出
+    const aiEmotionChange = EmotionSystem.extractEmotionChange(aiResponse);
+    const combinedEmotionChange = this.mergeEmotionChanges(topicBasedEmotion, aiEmotionChange);
 
-    // 長時間の会話
-    if (turnCount >= 20 && !this.gameState.gameProgress.specialEvents.includes('long_conversation')) {
-      this.gameState.gameProgress.specialEvents.push('long_conversation');
+    // 感情状態を更新
+    this.gameState.emotionState = EmotionSystem.applyEmotionChange(
+      this.gameState.emotionState,
+      combinedEmotionChange,
+      this.gameState.character
+    );
+
+    // 告白成功判定
+    const currentAffection = this.gameState.emotionState.affection;
+    const requiredAffection = this.getRequiredAffection();
+
+    if (currentAffection >= requiredAffection) {
+      // 成功時の処理
+      this.gameState.gameProgress.confessionAttempted = true;
+      this.gameState.gameProgress.confessionSuccessful = true;
+
+      // 成功時の追加感情ボーナス
+      const successBonus: Partial<import('./types/game.js').EmotionState> = {
+        affection: 10,
+        trust: 5,
+        mood: 10,
+        tension: -5,
+        interest: 5
+      };
+
+      this.gameState.emotionState = EmotionSystem.applyEmotionChange(
+        this.gameState.emotionState,
+        successBonus,
+        this.gameState.character
+      );
+
+      return {
+        aiResponse: this.cleanResponse(aiResponse),
+        emotionChange: { ...combinedEmotionChange, ...successBonus },
+        relationshipStage: 'lover',
+        isGameEnding: true,
+        endingType: 'success'
+      };
+    } else {
+      // 失敗時の処理
+      this.gameState.gameProgress.confessionAttempted = true;
+      this.gameState.gameProgress.failedConfessions = 
+        (this.gameState.gameProgress.failedConfessions || 0) + 1;
+
+      if (this.gameState.gameProgress.failedConfessions >= 3) {
+        return {
+          aiResponse: this.cleanResponse(aiResponse),
+          emotionChange: combinedEmotionChange,
+          relationshipStage: this.gameState.relationshipStage,
+          isGameEnding: true,
+          endingType: 'failure'
+        };
+      }
+
+      return {
+        aiResponse: this.cleanResponse(aiResponse),
+        emotionChange: combinedEmotionChange,
+        relationshipStage: this.gameState.relationshipStage
+      };
     }
   }
 
   /**
-   * 現在のゲーム状態を取得
+   * ゲーム状態を取得
    */
   getGameState(): GameState {
-    return { ...this.gameState };
+    return this.gameState;
   }
 
   /**
-   * 会話統計を取得
+   * 感情状態の可視化
    */
-  getConversationStats() {
-    return this.conversationManager.getConversationStats(this.gameState.conversationHistory);
+  visualizeEmotions(): string {
+    const emotions = this.gameState.emotionState;
+    const bars: string[] = [];
+
+    const emotionList = [
+      { name: '😊 気分', value: emotions.mood, max: 100 },
+      { name: '💖 好感度', value: emotions.affection, max: 100 },
+      { name: '🤝 信頼度', value: emotions.trust, max: 100 },
+      { name: '😰 緊張度', value: emotions.tension, max: 100 },
+      { name: '✨ 興味度', value: emotions.interest, max: 100 }
+    ];
+
+    for (const emotion of emotionList) {
+      const percentage = Math.max(0, Math.min(100, (emotion.value / emotion.max) * 100));
+      const filled = Math.floor(percentage / 5);
+      const bar = '█'.repeat(filled) + '░'.repeat(20 - filled);
+      bars.push(`${emotion.name}: ${bar} ${emotion.value}/${emotion.max}`);
+    }
+
+    return bars.join('\n');
   }
 
   /**
@@ -346,16 +438,9 @@ export class GameEngine {
   }
 
   /**
-   * 感情状態の可視化
+   * 会話統計を取得
    */
-  visualizeEmotions(): string {
-    return EmotionSystem.visualizeEmotions(this.gameState.emotionState);
-  }
-
-  /**
-   * ゲーム状態をリセット
-   */
-  resetGame(): void {
-    this.gameState = null as any;
+  getConversationStats() {
+    return this.conversationManager.getConversationStats(this.gameState.conversationHistory);
   }
 }

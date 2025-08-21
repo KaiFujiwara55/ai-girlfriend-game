@@ -7,7 +7,9 @@
   "scripts": {
     "build": "tsc",
     "start": "node dist/index.js",
+    "start:linebot": "node dist/line-bot-server.js",
     "dev": "ts-node --esm src/index.ts",
+    "dev:linebot": "ts-node --esm src/line-bot-server.ts",
     "test": "ts-node --esm src/test/test-runner.ts",
     "test:manual": "ts-node --esm src/test/manual-test.ts",
     "test:simulation": "ts-node --esm src/test/simulation-test.ts",
@@ -26,13 +28,14 @@
   "author": "",
   "license": "MIT",
   "dependencies": {
+    "@line/bot-sdk": "^10.1.2",
     "dotenv": "^17.2.1",
-    "openai": "^4.24.0",
-    "readline-sync": "^1.4.10"
+    "express": "^5.1.0",
+    "openai": "^4.24.0"
   },
   "devDependencies": {
+    "@types/express": "^5.0.3",
     "@types/node": "^20.10.0",
-    "@types/readline-sync": "^1.4.8",
     "ts-node": "^10.9.1",
     "typescript": "^5.3.0"
   }
